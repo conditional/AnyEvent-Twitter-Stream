@@ -84,31 +84,17 @@ sub new {
         $uri->query_form(%args);
     }
 
+    my $self = bless {}, $class;
+
     my $auth;
     if ($consumer_key) {
-        eval {require Net::OAuth;};
-        die $@ if $@;
-
-        my $request = Net::OAuth->request('protected resource')->new(
-            version          => '1.0',
-            consumer_key     => $consumer_key,
-            consumer_secret  => $consumer_secret,
-            token            => $token,
-            token_secret     => $token_secret,
-            request_method   => $request_method,
-            signature_method => 'HMAC-SHA1',
-            timestamp        => time,
-            nonce            => MIME::Base64::encode( time . $$ . rand ),
-            request_url      => $uri,
-            $request_method eq 'POST' ? (extra_params => \%args) : (),
+        @{$self}{qw/consumer_key consumer_secret token token_secret/} = (
+            $consumer_key, $consumer_secret, $token, $token_secret,
         );
-        $request->sign;
-        $auth = $request->to_authorization_header;
+        $auth = $self->oauth_header($request_method, $uri, $request_method eq 'POST' ? \%args : {});
     }else{
         $auth = "Basic ".MIME::Base64::encode("$username:$password", '');
     }
-
-    my $self = bless {}, $class;
 
     {
         Scalar::Util::weaken(my $self = $self);
@@ -230,6 +216,30 @@ sub new {
     }
 
     return $self;
+}
+
+sub oauth_header{
+    my ( $self, $request_method, $uri, $extra_params ) = @_;
+
+    eval {require Net::OAuth;};
+    die $@ if $@;
+
+
+    my $request = Net::OAuth->request('protected resource')->new(
+        version          => '1.0',
+        consumer_key     => $self->{consumer_key},
+        consumer_secret  => $self->{consumer_secret},
+        token            => $self->{token},
+        token_secret     => $self->{token_secret},
+        request_method   => $request_method,
+        signature_method => 'HMAC-SHA1',
+        timestamp        => time,
+        nonce            => MIME::Base64::encode( time . $$ . rand ),
+        request_url      => $uri,
+        extra_params     => $extra_params || {},
+    );
+    $request->sign;
+    return $request->to_authorization_header;
 }
 
 1;
